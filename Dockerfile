@@ -49,12 +49,14 @@ COPY cmd ./cmd
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags=-s -o /out/holtdroid-redroid-init ./cmd/holtdroid-redroid-init
 
 FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS vendor
+ARG GRALLOC=cros
 COPY --from=redroid /vendor/bin/gpu_config.sh /vendor/build.prop /in/
 COPY --from=ndk /ndk_translation.prop /in/
 RUN set -eux; \
     mkdir -p /out/vendor/bin; \
     grep -q '^    setprop ro.hardware.gralloc gbm$' /in/gpu_config.sh; \
-    sed 's/^    setprop ro.hardware.gralloc gbm$/    setprop ro.hardware.gralloc cros/' /in/gpu_config.sh > /out/vendor/bin/gpu_config.sh; \
+    sed "s/^    setprop ro.hardware.gralloc gbm\$/    setprop ro.hardware.gralloc $GRALLOC/" /in/gpu_config.sh > /out/vendor/bin/gpu_config.sh; \
+    grep -q "^    setprop ro.hardware.gralloc $GRALLOC\$" /out/vendor/bin/gpu_config.sh; \
     grep -qx 'ro.dalvik.vm.native.bridge=libnb.so' /in/build.prop; \
     grep -qx 'ro.enable.native.bridge.exec=1' /in/build.prop; \
     grep -qx 'ro.dalvik.vm.isa.arm64=x86_64' /in/build.prop; \

@@ -30,6 +30,10 @@ What the image changes on top of redroid:
   encoder. This image always enables Codec2, allocates linear blocks as
   gralloc BLOBs (`debug.stagefright.c2-poolmask=851968`) and uses the
   minigbm gralloc (`cros`), because the default `gbm` one crashes on BLOBs.
+  Android 11 keeps `gbm` (`GRALLOC=gbm` in `versions/11.env`): it has no
+  Codec2 video encoders, only `OMX.google.h264.encoder` in a 32-bit
+  `media.codec`, which can't lock screen buffers through `cros`, so scrcpy
+  got its codec header and then no frames.
   Encoders are software (`c2.android.avc.encoder`, HEVC, AV1).
 - **ARM64 translation.** `libndk_translation` from the Google APIs emulator
   system image of the same API level, so APKs with only `arm64-v8a`
