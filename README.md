@@ -30,11 +30,30 @@ What the image changes on top of redroid:
   (`ro.enable.native.bridge.exec`) is off: binfmt_misc is not namespaced and
   registering it would change the host.
 - **Privileged pods in Kubernetes.** The entrypoint
-  `/holtdroid-redroid-init` moves itself into a child cgroup, unshares the
-  cgroup namespace and remounts `/sys/fs/cgroup` before it execs `/init`.
-  Without it Android's init can't create process groups and netd can't
-  attach its BPF programs next to systemd's. Without a host cgroup
-  namespace (plain `docker run`) it does nothing.
+  `/holtdroid-redroid-init` runs before Android's `/init`:
+  - it moves itself into a child cgroup, unshares the cgroup namespace and
+    remounts `/sys/fs/cgroup`. Without it Android's init can't create
+    process groups and netd can't attach its BPF programs next to systemd's.
+    Without a host cgroup namespace (plain `docker run`) this step does
+    nothing;
+  - it keeps Android off the node's sysctls. A privileged container writes
+    straight into the host's `/proc/sys`, and Android's init.rc disables
+    `kernel.modprobe` and `kernel.sysrq`, lowers `vm.mmap_min_addr`, retunes
+    hung-task, scheduler and VM watermark settings, while `netbpfload` sets
+    `kernel.unprivileged_bpf_disabled` to 0 and reboots Android when that
+    write fails. The build strips every `write /proc/sys/...` outside
+    `/proc/sys/net` from `init.rc` and `redroid.common.rc` (the `rc` stage,
+    guarded by greps), and the wrapper forks a guard that waits for init's
+    own procfs mount on `/proc` and bind-mounts a plain file over each
+    remaining target (`unprivileged_bpf_disabled`, `modprobe`, `sysrq`, the
+    hung-task, `sched_schedstats`, `perf_event_paranoid` and watermark
+    sysctls, `mmap_min_addr`), so the binaries' writes land in a file instead
+    of the kernel. A read-only bind under the wrapper's `/proc/sys` would be
+    hidden by that fresh procfs, and a read-only `/proc/sys/kernel` makes
+    init abort: it insists on raising `kptr_restrict` (and `mmap_rnd_bits`),
+    the two sysctls that stay real because raising them only hardens the
+    node. Verified on a k3s node by diffing `sysctl -a` around a boot: only
+    `kernel.kptr_restrict` 1→2 remains.
 
 The image is `linux/amd64` only.
 

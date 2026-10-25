@@ -61,8 +61,23 @@ RUN set -eux; \
         -e 's/^ro.enable.native.bridge.exec=1$/ro.enable.native.bridge.exec=0/' /in/build.prop > /out/vendor/build.prop; \
     cat /in/ndk_translation.prop >> /out/vendor/build.prop
 
+FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS rc
+COPY --from=redroid /system/etc/init/hw/init.rc /vendor/etc/init/redroid.common.rc /in/
+RUN set -eux; \
+    mkdir -p /out; \
+    grep -q '^    write /proc/sys/kernel/sysrq 0$' /in/init.rc; \
+    grep -q '^    write /proc/sys/kernel/modprobe' /in/init.rc; \
+    grep -q '^    write /proc/sys/vm/mmap_min_addr 32768$' /in/init.rc; \
+    grep -q '^    write /proc/sys/kernel/pid_max' /in/redroid.common.rc; \
+    for f in init.rc redroid.common.rc; do \
+      sed -E '/^\s*write \/proc\/sys\/(kernel|vm|fs|abi|debug|dev|user)\//d' "/in/$f" > "/out/$f"; \
+      ! grep -E 'write /proc/sys/' "/out/$f" | grep -v '/proc/sys/net/'; \
+    done
+
 FROM ${REDROID_IMAGE}
 COPY --from=ndk /out/ /
+COPY --from=rc --chown=0:0 --chmod=644 /out/init.rc /system/etc/init/hw/init.rc
+COPY --from=rc --chown=0:0 --chmod=644 /out/redroid.common.rc /vendor/etc/init/redroid.common.rc
 COPY --from=vendor --chown=0:2000 --chmod=755 /out/vendor/bin/gpu_config.sh /vendor/bin/gpu_config.sh
 COPY --from=vendor --chown=0:0 --chmod=600 /out/vendor/build.prop /vendor/build.prop
 COPY --chown=0:2000 --chmod=755 vendor/bin/redroid.c2.sh /vendor/bin/redroid.c2.sh

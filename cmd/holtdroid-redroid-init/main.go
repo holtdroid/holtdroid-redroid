@@ -5,18 +5,55 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 )
 
-const cgroupRoot = "/sys/fs/cgroup"
+const (
+	cgroupRoot = "/sys/fs/cgroup"
+	procSys    = "/proc/sys"
+	procSysNet = "/proc/sys/net"
+	procFlags  = syscall.MS_NOSUID | syscall.MS_NODEV | syscall.MS_NOEXEC
+)
+
+// guarded are the node-wide sysctls Android's binaries write (the rc files'
+// writes are removed at build time): netbpfload relaxes unprivileged BPF and
+// exits, rebooting Android, when the write fails, so each gets a plain file
+// bind-mounted over it that takes the write instead of the kernel.
+// kptr_restrict and mmap_rnd_bits stay real: init aborts unless it can raise
+// them, and raising them only hardens the node.
+var guarded = []string{
+	"/proc/sys/kernel/unprivileged_bpf_disabled", "/proc/sys/kernel/modprobe", "/proc/sys/kernel/sysrq",
+	"/proc/sys/kernel/hung_task_timeout_secs", "/proc/sys/kernel/hung_task_check_count", "/proc/sys/kernel/hung_task_warnings",
+	"/proc/sys/kernel/sched_schedstats", "/proc/sys/kernel/perf_event_paranoid",
+	"/proc/sys/vm/watermark_scale_factor", "/proc/sys/vm/watermark_boost_factor", "/proc/sys/vm/mmap_min_addr",
+}
+
+const decoyDir = "/dev/.holtdroid-sysctl"
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--guard" {
+		if err := guard(); err != nil {
+			fmt.Fprintln(os.Stderr, "holtdroid-redroid-init guard:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	runtime.LockOSThread()
 	if err := isolateCgroup(); err != nil {
 		fmt.Fprintln(os.Stderr, "holtdroid-redroid-init:", err)
+		os.Exit(1)
+	}
+	if err := protectSysctls(); err != nil {
+		fmt.Fprintln(os.Stderr, "holtdroid-redroid-init:", err)
+		os.Exit(1)
+	}
+	if err := exec.Command("/proc/self/exe", "--guard").Start(); err != nil {
+		fmt.Fprintln(os.Stderr, "holtdroid-redroid-init: start guard:", err)
 		os.Exit(1)
 	}
 	args := append([]string{"/init"}, os.Args[1:]...)
@@ -47,6 +84,82 @@ func isolateCgroup() error {
 		return fmt.Errorf("mount %s: %w", cgroupRoot, err)
 	}
 	return nil
+}
+
+// protectSysctls makes /proc/sys read-only except /proc/sys/net in the
+// wrapper's own view. Android's init mounts a fresh procfs over /proc, which
+// hides these binds, so guard repeats them on top of that mount.
+func protectSysctls() error {
+	steps := []struct {
+		target string
+		flags  uintptr
+	}{
+		{procSys, syscall.MS_BIND},
+		{procSys, syscall.MS_BIND | syscall.MS_REMOUNT | syscall.MS_RDONLY | procFlags},
+		{procSysNet, syscall.MS_BIND},
+		{procSysNet, syscall.MS_BIND | syscall.MS_REMOUNT | procFlags},
+	}
+	for _, s := range steps {
+		if err := syscall.Mount(s.target, s.target, "", s.flags, ""); err != nil {
+			return fmt.Errorf("mount %s (flags %#x): %w", s.target, s.flags, err)
+		}
+	}
+	return nil
+}
+
+// guard waits for init's own procfs mount on /proc and then bind-mounts the
+// guarded sysctls read-only on top of it; the container's mounts propagate
+// to the mount namespaces init creates later.
+func guard() error {
+	initial, err := procMounts()
+	if err != nil {
+		return err
+	}
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		cur, err := procMounts()
+		if err != nil {
+			return err
+		}
+		if cur > initial {
+			break
+		}
+		if time.Now().After(deadline) {
+			return errors.New("init did not mount /proc within 2 minutes")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if err := os.MkdirAll(decoyDir, 0o700); err != nil {
+		return err
+	}
+	for _, file := range guarded {
+		cur, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		decoy := filepath.Join(decoyDir, filepath.Base(file))
+		if err := os.WriteFile(decoy, cur, 0o600); err != nil {
+			return err
+		}
+		if err := syscall.Mount(decoy, file, "", syscall.MS_BIND, ""); err != nil {
+			return fmt.Errorf("bind %s over %s: %w", decoy, file, err)
+		}
+	}
+	return nil
+}
+
+func procMounts() (int, error) {
+	b, err := os.ReadFile("/proc/self/mountinfo")
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for line := range strings.SplitSeq(string(b), "\n") {
+		if f := strings.Fields(line); len(f) > 4 && f[4] == "/proc" {
+			n++
+		}
+	}
+	return n, nil
 }
 
 func ownCgroup() (string, error) {
