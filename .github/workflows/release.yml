@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        android: ["15", "14", "13", "12"]
+        android: ["15", "14", "13", "12", "11"]
     steps:
       - uses: actions/checkout@v5
       - id: pins

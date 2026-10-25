@@ -10,6 +10,7 @@ sessions, one image per Android version:
 | `14` | `redroid/redroid:14.0.0_64only-latest` | `x86_64-34_r14` (`libndk_translation`) |
 | `13` | `redroid/redroid:13.0.0_64only-latest` | `x86_64-33_r15` (`libndk_translation`; r16 and later ship no translation) |
 | `12` | `redroid/redroid:12.0.0_64only-latest` | `x86_64-32_r08` (`libndk_translation`) |
+| `11` | `redroid/redroid:11.0.0-latest` (32-bit ABIs included) | `x86_64-30_r16` (`libndk_translation`; the image has no `ro.ndk_translation.version`) |
 
 Each is published as `ghcr.io/holtdroid/holtdroid-redroid:<version>` and
 `:<version>-<commit sha>`; `:main` is the same as `:15`. The pins (base image

@@ -32,9 +32,8 @@ RUN set -eux; \
       echo "dump -p /system/etc/ld.config.arm64.txt /out/system/etc/ld.config.arm64.txt"; \
       echo "cat /system/build.prop"; \
     } > cmds; \
-    debugfs -f cmds system.ext4 | grep '^ro.ndk_translation.version=' > /ndk_translation.prop; \
+    debugfs -f cmds system.ext4 | { grep '^ro.ndk_translation.version=' || true; } > /ndk_translation.prop; \
     rm system.ext4; \
-    test -s /ndk_translation.prop; \
     test -f /out/system/lib64/libndk_translation.so; \
     [ "$BERBERIS" != 1 ] || test -f /out/system/lib64/libberberis_exec_region.so; \
     [ "$BERBERIS" = 1 ] || ! ls /out/system/lib64/libberberis* 2>/dev/null; \
