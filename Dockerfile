@@ -1,6 +1,8 @@
 # redroid for Holtdroid sessions: software video encoders without DMA heaps,
 # ARM64 translation from the matching Android emulator system image, and an
-# init wrapper for privileged pods. One build per Android version, pinned in
+# init wrapper for privileged pods, and the built-in WebView re-signed with
+# Chromium's public debug key so Chromium snapshot builds install over it.
+# One build per Android version, pinned in
 # versions/<version>.env. linux/amd64 only.
 
 ARG REDROID_IMAGE
@@ -74,6 +76,16 @@ RUN set -eux; \
       ! grep -E 'write /proc/sys/' "/out/$f" | grep -v '/proc/sys/net/'; \
     done
 
+FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS webview
+RUN apt-get update && apt-get install -y --no-install-recommends apksigner && rm -rf /var/lib/apt/lists/*
+COPY --from=redroid /system/product/app/webview/webview.apk /in/webview.apk
+COPY build/chromium-debug.keystore /in/
+RUN set -eux; \
+    mkdir -p /out; \
+    apksigner sign --ks /in/chromium-debug.keystore --ks-pass pass:chromium --ks-key-alias chromiumdebugkey \
+      --out /out/webview.apk /in/webview.apk; \
+    apksigner verify --print-certs /out/webview.apk | grep -q 'SHA-256 digest: 32a2fc74d731105859e5a85df16d95f102d85b22099b8064c5d8915c61dad1e0'
+
 FROM ${REDROID_IMAGE}
 COPY --from=ndk /out/ /
 COPY --from=rc --chown=0:0 --chmod=644 /out/init.rc /system/etc/init/hw/init.rc
@@ -81,6 +93,7 @@ COPY --from=rc --chown=0:0 --chmod=644 /out/redroid.common.rc /vendor/etc/init/r
 COPY --from=vendor --chown=0:2000 --chmod=755 /out/vendor/bin/gpu_config.sh /vendor/bin/gpu_config.sh
 COPY --from=vendor --chown=0:0 --chmod=600 /out/vendor/build.prop /vendor/build.prop
 COPY --chown=0:2000 --chmod=755 vendor/bin/redroid.c2.sh /vendor/bin/redroid.c2.sh
+COPY --from=webview --chown=0:0 --chmod=644 /out/webview.apk /system/product/app/webview/webview.apk
 COPY --from=init /out/holtdroid-redroid-init /holtdroid-redroid-init
 ENTRYPOINT ["/holtdroid-redroid-init"]
 CMD ["qemu=1", "androidboot.hardware=redroid", "androidboot.redroid_gpu_mode=host", "androidboot.use_memfd=true"]

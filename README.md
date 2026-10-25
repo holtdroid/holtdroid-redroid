@@ -36,6 +36,15 @@ What the image changes on top of redroid:
   libraries run. Executing ARM binaries as separate processes
   (`ro.enable.native.bridge.exec`) is off: binfmt_misc is not namespaced and
   registering it would change the host.
+- **The built-in WebView is re-signed with Chromium's public debug key**
+  (`build/chromium-debug.keystore`, from
+  `chromium/src/build/android/chromium-debug.keystore`, alias
+  `chromiumdebugkey`, password `chromium`). Chromium's snapshot builds of
+  `SystemWebView.apk` (`com.android.webview`) are signed with that key, so
+  Holtdroid installs any of them as an update of the built-in WebView, and
+  `pm uninstall com.android.webview` goes back to the factory one. redroid
+  ships it signed with AOSP's test key, which no snapshot matches. The
+  APK's contents are unchanged.
 - **Privileged pods in Kubernetes.** The entrypoint
   `/holtdroid-redroid-init` runs before Android's `/init`:
   - it moves itself into a child cgroup, unshares the cgroup namespace and
