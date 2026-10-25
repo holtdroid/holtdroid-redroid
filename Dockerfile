@@ -58,7 +58,8 @@ RUN set -eux; \
     grep -qx 'ro.dalvik.vm.isa.arm64=x86_64' /in/build.prop; \
     sed -e 's/^ro.dalvik.vm.native.bridge=libnb.so$/ro.dalvik.vm.native.bridge=libndk_translation.so/' \
         -e 's/^ro.enable.native.bridge.exec=1$/ro.enable.native.bridge.exec=0/' /in/build.prop > /out/vendor/build.prop; \
-    cat /in/ndk_translation.prop >> /out/vendor/build.prop
+    cat /in/ndk_translation.prop >> /out/vendor/build.prop; \
+    echo 'service.adb.root=1' >> /out/vendor/build.prop
 
 FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS rc
 COPY --from=redroid /system/etc/init/hw/init.rc /vendor/etc/init/redroid.common.rc /in/

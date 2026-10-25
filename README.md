@@ -19,6 +19,12 @@ passed to the Dockerfile as build args: `make image ANDROID=14`.
 
 What the image changes on top of redroid:
 
+- **adbd runs as root from boot** (`service.adb.root=1` in the vendor
+  build.prop), so Holtdroid's `adb root` is a no-op instead of a restart.
+  On Android 11 the restart crash-looped on `Could not install *smartsocket*
+  listener: Address already in use` (the old listener's TIME_WAIT; that
+  adbd sets no `SO_REUSEADDR`).
+
 - **Video encoders without DMA heaps.** Stock redroid disables Codec2 unless
   the kernel has `/dev/dma_heap/system` or `/dev/ion`, so scrcpy finds no
   encoder. This image always enables Codec2, allocates linear blocks as
