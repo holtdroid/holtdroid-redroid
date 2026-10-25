@@ -49,6 +49,20 @@ What the image changes on top of redroid:
   `pm uninstall com.android.webview` goes back to the factory one. redroid
   ships it signed with AOSP's test key, which no snapshot matches. The
   APK's contents are unchanged.
+- **Newer Vulkan drivers** (`VULKAN=mesa`, only in `versions/15.env` so
+  far). redroid ships Mesa 24.0.8 built with `android-strict`, which on its
+  API level advertises Vulkan 1.1 and hides `VK_KHR_pipeline_library`,
+  `dynamic_rendering`, `synchronization2` and more. Chromium 157 and later
+  need them (ANGLE and Skia run on Vulkan, with no GL fallback) and abort
+  with "GPU process isn't usable". The `mesa-build` stage cross-compiles
+  Mesa (`MESA_VERSION`) with the Android NDK and `-Dandroid-strict=false`:
+  first `mesa_clc` and the Intel shader precompiler for the build machine,
+  then radv and anv for `x86_64-linux-android30`, with libdrm and expat
+  linked in statically so the drivers need only Android's own libraries
+  (the build fails otherwise). They replace `vulkan.radeon.so` and
+  `vulkan.intel.so`; EGL and GLES stay redroid's. Verified on Intel UHD 630
+  (Chromium 158 and the built-in WebView 128 render WebGL at 60 fps on
+  Vulkan 1.4); AMD (radv) is built the same way.
 - **Privileged pods in Kubernetes.** The entrypoint
   `/holtdroid-redroid-init` runs before Android's `/init`:
   - it moves itself into a child cgroup, unshares the cgroup namespace and
