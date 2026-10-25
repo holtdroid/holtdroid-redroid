@@ -1,8 +1,22 @@
 # holtdroid-redroid
 
-[redroid](https://github.com/remote-android/redroid-doc) 15 (Android in a
+[redroid](https://github.com/remote-android/redroid-doc) (Android in a
 container) prepared for [Holtdroid](https://github.com/holtdroid/holtdroid)
-sessions:
+sessions, one image per Android version:
+
+| Tag | redroid base | ARM64 translation from |
+|-----|--------------|------------------------|
+| `15` | `redroid/redroid:15.0.0_64only-latest` | emulator image `x86_64-35_r09` (`libndk_translation` + berberis) |
+| `14` | `redroid/redroid:14.0.0_64only-latest` | `x86_64-34_r14` (`libndk_translation`) |
+| `13` | `redroid/redroid:13.0.0_64only-latest` | `x86_64-33_r15` (`libndk_translation`; r16 and later ship no translation) |
+| `12` | `redroid/redroid:12.0.0_64only-latest` | `x86_64-32_r08` (`libndk_translation`) |
+
+Each is published as `ghcr.io/holtdroid/holtdroid-redroid:<version>` and
+`:<version>-<commit sha>`; `:main` is the same as `:15`. The pins (base image
+digest, system image zip and SHA-1) live in `versions/<version>.env` and are
+passed to the Dockerfile as build args: `make image ANDROID=14`.
+
+What the image changes on top of redroid:
 
 - **Video encoders without DMA heaps.** Stock redroid disables Codec2 unless
   the kernel has `/dev/dma_heap/system` or `/dev/ion`, so scrcpy finds no
@@ -10,9 +24,9 @@ sessions:
   gralloc BLOBs (`debug.stagefright.c2-poolmask=851968`) and uses the
   minigbm gralloc (`cros`), because the default `gbm` one crashes on BLOBs.
   Encoders are software (`c2.android.avc.encoder`, HEVC, AV1).
-- **ARM64 translation.** `libndk_translation` (with berberis) from the
-  Android 15 emulator system image (`x86_64-35_r09`), so APKs with only
-  `arm64-v8a` libraries run. Executing ARM binaries as separate processes
+- **ARM64 translation.** `libndk_translation` from the Google APIs emulator
+  system image of the same API level, so APKs with only `arm64-v8a`
+  libraries run. Executing ARM binaries as separate processes
   (`ro.enable.native.bridge.exec`) is off: binfmt_misc is not namespaced and
   registering it would change the host.
 - **Privileged pods in Kubernetes.** The entrypoint
@@ -22,8 +36,7 @@ sessions:
   attach its BPF programs next to systemd's. Without a host cgroup
   namespace (plain `docker run`) it does nothing.
 
-The image is `linux/amd64` only and published as
-`ghcr.io/holtdroid/holtdroid-redroid:<commit sha>` and `:main`.
+The image is `linux/amd64` only.
 
 ## Running it
 
@@ -32,7 +45,7 @@ needed (`androidboot.use_memfd=true`, the default arguments). For GPU
 rendering pass the render node:
 
 ```sh
-docker run -d --privileged -p 5555:5555 ghcr.io/holtdroid/holtdroid-redroid:main \
+docker run -d --privileged -p 5555:5555 ghcr.io/holtdroid/holtdroid-redroid:15 \
   qemu=1 androidboot.hardware=redroid androidboot.use_memfd=true \
   androidboot.redroid_gpu_mode=host androidboot.redroid_gpu_node=/dev/dri/renderD128 \
   androidboot.redroid_width=720 androidboot.redroid_height=1600 \

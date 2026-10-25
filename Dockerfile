@@ -1,17 +1,18 @@
-# redroid 15 for Holtdroid sessions: software video encoders without DMA
-# heaps, ARM64 translation from the Android 15 emulator system image, and an
-# init wrapper for privileged pods that share the host's cgroup namespace.
-# linux/amd64 only.
+# redroid for Holtdroid sessions: software video encoders without DMA heaps,
+# ARM64 translation from the matching Android emulator system image, and an
+# init wrapper for privileged pods. One build per Android version, pinned in
+# versions/<version>.env. linux/amd64 only.
 
-ARG REDROID_IMAGE=docker.io/redroid/redroid:15.0.0_64only-latest@sha256:b51bde9cef80f7bd7581148192f2b2f4d41f23c6344cfe88eceeb8ddd67490ee
+ARG REDROID_IMAGE
 ARG GO_IMAGE=docker.io/library/golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61
 ARG DEBIAN_IMAGE=docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
 
 FROM ${REDROID_IMAGE} AS redroid
 
 FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS ndk
-ARG SYSTEM_IMAGE_ZIP=x86_64-35_r09.zip
-ARG SYSTEM_IMAGE_SHA1=0103e6dab21290c4b9d16550a3ce99476f884eef
+ARG SYSTEM_IMAGE_ZIP
+ARG SYSTEM_IMAGE_SHA1
+ARG BERBERIS=0
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip python3 e2fsprogs && rm -rf /var/lib/apt/lists/*
 COPY build/lpunpack.py /usr/local/bin/lpunpack
 WORKDIR /dl
@@ -29,11 +30,14 @@ RUN set -eux; \
       echo "rdump /system/lib64/arm64 /out/system/lib64"; \
       echo "rdump /system/bin/arm64 /out/system/bin"; \
       echo "dump -p /system/etc/ld.config.arm64.txt /out/system/etc/ld.config.arm64.txt"; \
+      echo "cat /system/build.prop"; \
     } > cmds; \
-    debugfs -f cmds system.ext4; \
+    debugfs -f cmds system.ext4 | grep '^ro.ndk_translation.version=' > /ndk_translation.prop; \
     rm system.ext4; \
+    test -s /ndk_translation.prop; \
     test -f /out/system/lib64/libndk_translation.so; \
-    test -f /out/system/lib64/libberberis_exec_region.so; \
+    [ "$BERBERIS" != 1 ] || test -f /out/system/lib64/libberberis_exec_region.so; \
+    [ "$BERBERIS" = 1 ] || ! ls /out/system/lib64/libberberis* 2>/dev/null; \
     test -f /out/system/lib64/arm64/libc.so; \
     test -f /out/system/bin/arm64/linker64
 
@@ -45,15 +49,17 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags=-s -o /out
 
 FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS vendor
 COPY --from=redroid /vendor/bin/gpu_config.sh /vendor/build.prop /in/
+COPY --from=ndk /ndk_translation.prop /in/
 RUN set -eux; \
     mkdir -p /out/vendor/bin; \
     grep -q '^    setprop ro.hardware.gralloc gbm$' /in/gpu_config.sh; \
     sed 's/^    setprop ro.hardware.gralloc gbm$/    setprop ro.hardware.gralloc cros/' /in/gpu_config.sh > /out/vendor/bin/gpu_config.sh; \
     grep -qx 'ro.dalvik.vm.native.bridge=libnb.so' /in/build.prop; \
     grep -qx 'ro.enable.native.bridge.exec=1' /in/build.prop; \
+    grep -qx 'ro.dalvik.vm.isa.arm64=x86_64' /in/build.prop; \
     sed -e 's/^ro.dalvik.vm.native.bridge=libnb.so$/ro.dalvik.vm.native.bridge=libndk_translation.so/' \
         -e 's/^ro.enable.native.bridge.exec=1$/ro.enable.native.bridge.exec=0/' /in/build.prop > /out/vendor/build.prop; \
-    echo 'ro.ndk_translation.version=0.2.3' >> /out/vendor/build.prop
+    cat /in/ndk_translation.prop >> /out/vendor/build.prop
 
 FROM ${REDROID_IMAGE}
 COPY --from=ndk /out/ /
