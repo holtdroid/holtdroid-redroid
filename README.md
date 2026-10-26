@@ -147,7 +147,7 @@ What the image changes on top of redroid:
   home and lock screens show it, and another one turns Launcher3's
   `search_container_workspace` into an empty view, so the first home
   screen has no search bar. Holtdroid's agent clears the home screen and
-  pins the app under test on it (Holtdroid decision #125).
+  pins the app under test on it (Holtdroid decision #126).
 
 The image is `linux/amd64` only.
 
