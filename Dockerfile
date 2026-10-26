@@ -221,7 +221,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags=-s -o /out
 
 FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS vendor
 ARG GRALLOC=cros
+ARG CODEC2=on
 COPY --from=redroid /vendor/bin/gpu_config.sh /vendor/build.prop /in/
+COPY --from=redroid /odm/etc/build.prop /in/odm.prop
 COPY --from=ndk /ndk_translation.prop /in/
 RUN set -eux; \
     mkdir -p /out/vendor/bin; \
@@ -232,8 +234,15 @@ RUN set -eux; \
     grep -qx 'ro.enable.native.bridge.exec=1' /in/build.prop; \
     grep -qx 'ro.dalvik.vm.isa.arm64=x86_64' /in/build.prop; \
     sed -e 's/^ro.dalvik.vm.native.bridge=libnb.so$/ro.dalvik.vm.native.bridge=libndk_translation.so/' \
-        -e 's/^ro.enable.native.bridge.exec=1$/ro.enable.native.bridge.exec=0/' /in/build.prop > /out/vendor/build.prop; \
+        -e 's/^ro.enable.native.bridge.exec=1$/ro.enable.native.bridge.exec=0/' \
+        -e 's/^\(ro.vendor.product.cpu.abilist\(32\)\?=.*\),armeabi-v7a,armeabi$/\1/' \
+        -e '/^ro.dalvik.vm.isa.arm=x86$/d' /in/build.prop > /out/vendor/build.prop; \
+    ! grep -E '^ro.vendor.product.cpu.abilist(32)?=.*armeabi|^ro.dalvik.vm.isa.arm=' /out/vendor/build.prop; \
+    mkdir -p /out/odm/etc; \
+    sed 's/^\(ro.odm.product.cpu.abilist\(32\)\?=.*\),armeabi-v7a,armeabi$/\1/' /in/odm.prop > /out/odm/etc/build.prop; \
+    ! grep -E '^ro.odm.product.cpu.abilist(32)?=.*armeabi' /out/odm/etc/build.prop; \
     cat /in/ndk_translation.prop >> /out/vendor/build.prop; \
+    if [ "$CODEC2" = on ] && ! grep -qx 'ro.boot.use_redroid_c2=1' /out/vendor/build.prop; then echo 'ro.boot.use_redroid_c2=1' >> /out/vendor/build.prop; fi; \
     echo 'service.adb.root=1' >> /out/vendor/build.prop
 
 FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS rc
@@ -265,7 +274,9 @@ COPY --from=rc --chown=0:0 --chmod=644 /out/init.rc /system/etc/init/hw/init.rc
 COPY --from=rc --chown=0:0 --chmod=644 /out/redroid.common.rc /vendor/etc/init/redroid.common.rc
 COPY --from=vendor --chown=0:2000 --chmod=755 /out/vendor/bin/gpu_config.sh /vendor/bin/gpu_config.sh
 COPY --from=vendor --chown=0:0 --chmod=600 /out/vendor/build.prop /vendor/build.prop
+COPY --from=vendor --chown=0:0 --chmod=600 /out/odm/etc/build.prop /odm/etc/build.prop
 COPY --chown=0:2000 --chmod=755 vendor/bin/redroid.c2.sh /vendor/bin/redroid.c2.sh
+COPY --chown=0:0 --chmod=644 vendor/etc/init/holtdroid-c2.rc /vendor/etc/init/holtdroid-c2.rc
 COPY --from=webview --chown=0:0 --chmod=644 /out/webview.apk /system/product/app/webview/webview.apk
 COPY --from=vulkan --chown=0:0 --chmod=644 / /vendor/lib64/hw/
 COPY --from=bluetooth --chown=0:0 --chmod=644 / /vendor/etc/permissions/

@@ -6,11 +6,11 @@ sessions, one image per Android version:
 
 | Tag | redroid base | ARM64 translation from |
 |-----|--------------|------------------------|
-| `15` | `redroid/redroid:15.0.0_64only-latest` | emulator image `x86_64-35_r09` (`libndk_translation` + berberis) |
-| `14` | `redroid/redroid:14.0.0_64only-latest` | `x86_64-34_r14` (`libndk_translation`) |
-| `13` | `redroid/redroid:13.0.0_64only-latest` | `x86_64-33_r15` (`libndk_translation`; r16 and later ship no translation) |
-| `12` | `redroid/redroid:12.0.0_64only-latest` | `x86_64-32_r08` (`libndk_translation`) |
-| `11` | `redroid/redroid:11.0.0-latest` (32-bit ABIs included) | `x86_64-30_r16` (`libndk_translation`; the image has no `ro.ndk_translation.version`) |
+| `15` | `redroid/redroid:15.0.0-latest` | emulator image `x86_64-35_r09` (`libndk_translation` + berberis) |
+| `14` | `redroid/redroid:14.0.0-latest` | `x86_64-34_r14` (`libndk_translation`) |
+| `13` | `redroid/redroid:13.0.0-latest` | `x86_64-33_r15` (`libndk_translation`; r16 and later ship no translation) |
+| `12` | `redroid/redroid:12.0.0-latest` | `x86_64-32_r08` (`libndk_translation`) |
+| `11` | `redroid/redroid:11.0.0-latest` | `x86_64-30_r16` (`libndk_translation`; the image has no `ro.ndk_translation.version`) |
 
 Each is published as `ghcr.io/holtdroid/holtdroid-redroid:<version>` and
 `:<version>-<commit sha>`; `:main` is the same as `:15`. The pins (base image
@@ -34,12 +34,26 @@ What the image changes on top of redroid:
   Codec2 video encoders, only `OMX.google.h264.encoder` in a 32-bit
   `media.codec`, which can't lock screen buffers through `cros`, so scrcpy
   got its codec header and then no frames.
-  Encoders are software (`c2.android.avc.encoder`, HEVC, AV1).
+  Encoders are software (`c2.android.avc.encoder`, HEVC, AV1). redroid's
+  `_64only` bases switch Codec2 on in their vendor `build.prop`
+  (`ro.boot.use_redroid_c2=1`) and the ones with 32-bit ABIs don't, so the
+  image adds it (`CODEC2=off` in `versions/11.env` keeps Android 11 on OMX).
+  The Android 12 base also lacks `redroid.c2.rc`, which runs the switch, so
+  the image brings its own (`vendor/etc/init/holtdroid-c2.rc`).
 - **ARM64 translation.** `libndk_translation` from the Google APIs emulator
   system image of the same API level, so APKs with only `arm64-v8a`
   libraries run. Executing ARM binaries as separate processes
   (`ro.enable.native.bridge.exec`) is off: binfmt_misc is not namespaced and
   registering it would change the host.
+- **32-bit x86 apps.** Every version is built on redroid's base with 32-bit
+  ABIs (`zygote64_32`), not the `_64only` one: Google Chrome's x86 builds
+  run their browser in 32 bits (`use32bitAbi`) and abort on a 64-bit-only
+  Android ("WebView cannot be started with a browser process type"). The
+  emulator images carry no 32-bit ARM translation, so `armeabi-v7a` and
+  `armeabi` are dropped from the vendor and ODM ABI lists, and
+  `ro.dalvik.vm.isa.arm` with them: on Android 12 to 15 an app with only
+  32-bit ARM libraries fails to install instead of crashing. Android 11's
+  system `build.prop` sets the ABI list itself and still names them.
 - **The built-in WebView is re-signed with Chromium's public debug key**
   (`build/chromium-debug.keystore`, from
   `chromium/src/build/android/chromium-debug.keystore`, alias
