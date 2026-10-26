@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="3200" viewBox="0 0 1440 3200">
+  <rect width="1440" height="3200" fill="#0a0a0a"/>
+  <g transform="translate(528 1408) scale(6)" fill="none">
+    <path d="M8 40c0-13.3 10.7-24 24-24s24 10.7 24 24v8H8z" fill="#8a5a3c"/>
+    <path d="M20 16l-4-7M44 16l4-7" stroke="#3ddc84" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="23" cy="32" r="3.5" fill="#1b1b1b"/>
+    <circle cx="41" cy="32" r="3.5" fill="#1b1b1b"/>
+    <ellipse cx="32" cy="39" rx="5" ry="3.5" fill="#d9b48f"/>
+    <circle cx="32" cy="38" r="1.8" fill="#1b1b1b"/>
+    <rect x="4" y="48" width="56" height="8" rx="4" fill="#3ddc84"/>
+  </g>
+  <text x="720" y="1880" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="72" font-weight="600" letter-spacing="4" fill="#e5e5e5">holtdroid</text>
+</svg>

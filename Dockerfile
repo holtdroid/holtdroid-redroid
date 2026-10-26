@@ -202,6 +202,8 @@ RUN set -eux; \
     build /rro/android.xml HoltdroidNoEthernet ""; \
     aapt2 dump resources /in/framework-res.apk | grep -q 'xml/config_webview_packages'; \
     build /rro/webview.xml HoltdroidWebView "" /rro/webview-res; \
+    build /rro/wallpaper.xml HoltdroidWallpaper "" /rro/wallpaper-res; \
+    build /rro/launcher.xml HoltdroidLauncher "" /rro/launcher-res; \
     scr=$(find /in/tethering -path '*/priv-app/ServiceConnectivityResources*/*.apk' | head -1); \
     if [ -z "$scr" ] && ls /in/tethering/*.apex >/dev/null 2>&1; then \
       unzip -q /in/tethering/*.apex apex_payload.img; \

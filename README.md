@@ -142,6 +142,12 @@ What the image changes on top of redroid:
   `/data/vendor/wifi/router.pid` holds a process in the router namespace.
   Radios are scoped to the network namespace that created them and go
   away with it.
+- **A plain home screen**: a static overlay replaces the framework's
+  `default_wallpaper` with Holtdroid's logo on a dark background, so the
+  home and lock screens show it, and another one turns Launcher3's
+  `search_container_workspace` into an empty view, so the first home
+  screen has no search bar. Holtdroid's agent clears the home screen and
+  pins the app under test on it (Holtdroid decision #125).
 
 The image is `linux/amd64` only.
 
