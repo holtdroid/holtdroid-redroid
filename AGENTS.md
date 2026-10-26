@@ -17,7 +17,7 @@ vendor/bin/redroid.c2.sh          replaces redroid's Codec2 switch
 vendor/etc/init/holtdroid-c2.rc   runs it (the Android 12 base has no redroid.c2.rc)
 vendor/bin/holtdroid-wifi.sh      simulated Wi-Fi: hwsim radios, router namespace, access point
 vendor/etc/init/holtdroid-wifi.rc its init service (wpa_supplicant's stanza is added from the emulator's)
-build/rro/                        overlay that hides the container's eth0 from Android
+build/rro/                        overlays: hide the container's eth0 from Android, list Google WebView as a provider
 ```
 
 ## Rules

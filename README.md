@@ -45,6 +45,13 @@ What the image changes on top of redroid:
   libraries run. Executing ARM binaries as separate processes
   (`ro.enable.native.bridge.exec`) is off: binfmt_misc is not namespaced and
   registering it would change the host.
+- **Google WebView as a provider.** A static overlay
+  (`build/rro/webview.xml`) lists `com.google.android.webview` in
+  `config_webview_packages` after `com.android.webview`, not available by
+  default: the built-in WebView stays the default, and Holtdroid installs
+  Google's WebView from its catalog and switches to it with
+  `cmd webviewupdate set-webview-implementation`, which Android refuses for
+  a package missing from the list.
 - **32-bit x86 apps.** Every version is built on redroid's base with 32-bit
   ABIs (`zygote64_32`), not the `_64only` one: Google Chrome's x86 builds
   run their browser in 32 bits (`use32bitAbi`) and abort on a 64-bit-only

@@ -193,13 +193,15 @@ COPY build/rro/ /rro/
 RUN set -eux; \
     keytool -genkeypair -keystore k.jks -storepass holtdroid -keypass holtdroid -alias rro -dname CN=holtdroid-rro -keyalg RSA -validity 36500 >/dev/null; \
     build() { \
-      aapt2 compile --dir /rro/res -o res.zip; \
+      aapt2 compile --dir "${4:-/rro/res}" -o res.zip; \
       aapt2 link -o unsigned.apk --manifest "$1" -I /in/framework-res.apk $3 res.zip; \
       mkdir -p "/out/system/product/overlay/$2"; \
       apksigner sign --v4-signing-enabled false --ks k.jks --ks-pass pass:holtdroid --out "/out/system/product/overlay/$2/$2.apk" unsigned.apk; \
       rm res.zip unsigned.apk; \
     }; \
     build /rro/android.xml HoltdroidNoEthernet ""; \
+    aapt2 dump resources /in/framework-res.apk | grep -q 'xml/config_webview_packages'; \
+    build /rro/webview.xml HoltdroidWebView "" /rro/webview-res; \
     scr=$(find /in/tethering -path '*/priv-app/ServiceConnectivityResources*/*.apk' | head -1); \
     if [ -z "$scr" ] && ls /in/tethering/*.apex >/dev/null 2>&1; then \
       unzip -q /in/tethering/*.apex apex_payload.img; \
