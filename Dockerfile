@@ -8,6 +8,7 @@
 
 ARG REDROID_IMAGE
 ARG VULKAN=stock
+ARG BLUETOOTH=on
 ARG GO_IMAGE=docker.io/library/golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61
 ARG ALPINE_IMAGE=docker.io/library/alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
 ARG DEBIAN_IMAGE=docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
@@ -65,6 +66,21 @@ FROM scratch AS vulkan-stock
 COPY --from=redroid /vendor/lib64/hw/vulkan.radeon.so /vendor/lib64/hw/vulkan.intel.so /
 
 FROM vulkan-${VULKAN} AS vulkan
+
+FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS bluetooth-off-build
+COPY --from=redroid /vendor/etc/permissions/handheld_core_hardware.xml /in/
+RUN set -eux; \
+    mkdir /out; \
+    grep -qx '    <feature name="android.hardware.bluetooth" />' /in/handheld_core_hardware.xml; \
+    grep -vx '    <feature name="android.hardware.bluetooth" />' /in/handheld_core_hardware.xml > /out/handheld_core_hardware.xml; \
+    if grep -q 'android.hardware.bluetooth' /out/handheld_core_hardware.xml; then exit 1; fi
+
+FROM scratch AS bluetooth-off
+COPY --from=bluetooth-off-build /out/ /
+
+FROM scratch AS bluetooth-on
+
+FROM bluetooth-${BLUETOOTH} AS bluetooth
 
 FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS ndk
 ARG SYSTEM_IMAGE_ZIP
@@ -252,6 +268,7 @@ COPY --from=vendor --chown=0:0 --chmod=600 /out/vendor/build.prop /vendor/build.
 COPY --chown=0:2000 --chmod=755 vendor/bin/redroid.c2.sh /vendor/bin/redroid.c2.sh
 COPY --from=webview --chown=0:0 --chmod=644 /out/webview.apk /system/product/app/webview/webview.apk
 COPY --from=vulkan --chown=0:0 --chmod=644 / /vendor/lib64/hw/
+COPY --from=bluetooth --chown=0:0 --chmod=644 / /vendor/etc/permissions/
 COPY --from=wifi --chown=0:0 /out/vendor/ /vendor/
 COPY --chown=0:2000 --chmod=755 vendor/bin/holtdroid-wifi.sh /vendor/bin/holtdroid-wifi.sh
 COPY --from=net --chown=0:0 /out/ /vendor/holtdroid-net/

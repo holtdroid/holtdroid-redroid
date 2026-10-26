@@ -63,6 +63,17 @@ What the image changes on top of redroid:
   `vulkan.intel.so`; EGL and GLES stay redroid's. Verified on Intel UHD 630
   (Chromium 158 and the built-in WebView 128 render WebGL at 60 fps on
   Vulkan 1.4); AMD (radv) is built the same way.
+- **No Bluetooth on Android 13 and 14** (`BLUETOOTH=off` in their
+  `versions/*.env`). redroid's simulated Bluetooth HAL
+  (`android.hardware.bluetooth@1.1-service.sim`, rootcanal) aborts as soon
+  as the stack resets the controller: a CFI check in
+  `LinkLayerController::Reset` on 13, `Invalid address` on 14. Android
+  enables Bluetooth at boot, so `com.android.bluetooth` and the HAL crash a
+  few times each and Bluetooth ends up off and unusable anyway. The image
+  drops the `android.hardware.bluetooth` feature from
+  `handheld_core_hardware.xml`, so system_server starts no Bluetooth service
+  ("Bluetooth Hardware Not Present") and apps see a device without
+  Bluetooth. The idle HAL stays. Android 11, 12 and 15 keep a working one.
 - **Privileged pods in Kubernetes.** The entrypoint
   `/holtdroid-redroid-init` runs before Android's `/init`:
   - it moves itself into a child cgroup, unshares the cgroup namespace and
