@@ -1,0 +1,3 @@
+<resources>
+    <string name="config_ethernet_iface_regex" translatable="false">eth1</string>
+</resources>

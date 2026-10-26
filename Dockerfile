@@ -9,6 +9,7 @@
 ARG REDROID_IMAGE
 ARG VULKAN=stock
 ARG GO_IMAGE=docker.io/library/golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61
+ARG ALPINE_IMAGE=docker.io/library/alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
 ARG DEBIAN_IMAGE=docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
 
 FROM ${REDROID_IMAGE} AS redroid
@@ -69,14 +70,30 @@ FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS ndk
 ARG SYSTEM_IMAGE_ZIP
 ARG SYSTEM_IMAGE_SHA1
 ARG BERBERIS=0
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip python3 e2fsprogs && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip python3 e2fsprogs fdisk && rm -rf /var/lib/apt/lists/*
 COPY build/lpunpack.py /usr/local/bin/lpunpack
 WORKDIR /dl
 RUN set -eux; \
     curl -fsSLo sys.zip "https://dl.google.com/android/repository/sys-img/google_apis/$SYSTEM_IMAGE_ZIP"; \
     echo "$SYSTEM_IMAGE_SHA1  sys.zip" | sha1sum -c -; \
-    unzip -q sys.zip x86_64/system.img; \
+    unzip -q sys.zip x86_64/system.img x86_64/vendor.img; \
     rm sys.zip; \
+    start=$(sfdisk -d x86_64/vendor.img | sed -n 's/.*start= *\([0-9]*\).*/\1/p' | head -1); \
+    dd if=x86_64/vendor.img of=vendor.ext4 bs=512 skip="$start" status=none; \
+    rm x86_64/vendor.img; \
+    mkdir -p /emu/lib64 /emulib; \
+    for f in bin/hw/android.hardware.wifi@1.0-service bin/hw/android.hardware.wifi-service bin/hw/wpa_supplicant bin/mac80211_create_radios \
+      etc/init/android.hardware.wifi@1.0-service.rc etc/init/android.hardware.wifi-service.rc etc/init/hw/init.ranchu.rc etc/wifi/wpa_supplicant.conf \
+      etc/vintf/manifest/android.hardware.wifi@1.0-service.xml etc/vintf/manifest/android.hardware.wifi-service.xml \
+      etc/vintf/manifest/android.hardware.wifi.supplicant.xml etc/vintf/manifest/manifest.xml lib64/libwifi-hal.so; do \
+      mkdir -p "/emu/$(dirname $f)"; echo "dump -p /$f /emu/$f"; \
+    done > cmds; \
+    echo "rdump /lib64 /emulib" >> cmds; \
+    debugfs -f cmds vendor.ext4 >/dev/null 2>&1; \
+    rm vendor.ext4 cmds; \
+    test -f /emu/bin/hw/wpa_supplicant; \
+    test -f /emu/lib64/libwifi-hal.so; \
+    test -f /emulib/lib64/libwifi-hal.so; \
     lpunpack x86_64/system.img system system.ext4; \
     rm -r x86_64; \
     mkdir -p /out/system/lib64 /out/system/bin /out/system/etc; \
@@ -95,6 +112,90 @@ RUN set -eux; \
     [ "$BERBERIS" = 1 ] || ! ls /out/system/lib64/libberberis* 2>/dev/null; \
     test -f /out/system/lib64/arm64/libc.so; \
     test -f /out/system/bin/arm64/linker64
+
+FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS wifi
+RUN apt-get update && apt-get install -y --no-install-recommends binutils && rm -rf /var/lib/apt/lists/*
+COPY --from=ndk /emu/ /emu/
+COPY --from=ndk /emulib/lib64/ /emu/lib64/
+COPY --from=redroid /vendor/lib64/ /redroid/lib64/
+COPY vendor/etc/init/holtdroid-wifi.rc /in/
+RUN set -eux; \
+    mkdir -p /out/vendor/lib64; \
+    cd /emu; \
+    for f in bin/hw/android.hardware.wifi@1.0-service bin/hw/android.hardware.wifi-service bin/hw/wpa_supplicant bin/mac80211_create_radios \
+      etc/init/android.hardware.wifi@1.0-service.rc etc/init/android.hardware.wifi-service.rc etc/wifi/wpa_supplicant.conf \
+      etc/vintf/manifest/android.hardware.wifi@1.0-service.xml etc/vintf/manifest/android.hardware.wifi-service.xml \
+      etc/vintf/manifest/android.hardware.wifi.supplicant.xml lib64/libwifi-hal.so; do \
+      [ ! -f "$f" ] || { mkdir -p "/out/vendor/$(dirname $f)"; cp "$f" "/out/vendor/$f"; }; \
+    done; \
+    if [ ! -f etc/vintf/manifest/android.hardware.wifi.supplicant.xml ]; then \
+      grep -q '<name>android.hardware.wifi.supplicant</name>' etc/vintf/manifest/manifest.xml; \
+      cp etc/vintf/manifest/manifest.xml /out/vendor/etc/vintf/manifest/android.hardware.wifi.supplicant.xml; \
+    fi; \
+    test -f /out/vendor/bin/hw/android.hardware.wifi@1.0-service -o -f /out/vendor/bin/hw/android.hardware.wifi-service; \
+    added=1; while [ $added = 1 ]; do added=0; \
+      for b in $(find /out/vendor -type f \( -path '*/bin/*' -o -name '*.so' \)); do \
+        for l in $(readelf -d "$b" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p'); do \
+          [ ! -e "/redroid/lib64/$l" ] && [ ! -e "/out/vendor/lib64/$l" ] && [ -e "lib64/$l" ] || continue; \
+          cp "lib64/$l" /out/vendor/lib64/; added=1; \
+        done; \
+      done; \
+    done; \
+    mkdir -p /out/vendor/etc/init; \
+    { cat /in/holtdroid-wifi.rc; echo; \
+      awk '/^service wpa_supplicant /{p=1} p&&/^$/{exit} p' etc/init/hw/init.ranchu.rc; \
+    } > /out/vendor/etc/init/holtdroid-wifi.rc; \
+    grep -q '^service wpa_supplicant /vendor/bin/hw/wpa_supplicant ' /out/vendor/etc/init/holtdroid-wifi.rc; \
+    grep -q 'socket wpa_wlan0' /out/vendor/etc/init/holtdroid-wifi.rc; \
+    chmod 755 /out/vendor/bin/* /out/vendor/bin/hw/*; \
+    find /out/vendor -type f ! -path '*/bin/*' -exec chmod 644 {} +
+
+FROM ${ALPINE_IMAGE} AS net
+RUN set -eux; \
+    apk add --no-cache hostapd nftables; \
+    mkdir -p /out/lib; \
+    for b in /usr/sbin/hostapd /usr/sbin/nft; do \
+      cp "$b" /out/; \
+      for l in $(ldd "$b" | awk '/=>/ {print $3}'); do cp -L "$l" /out/lib/; done; \
+    done; \
+    cp -L /lib/ld-musl-x86_64.so.1 /out/lib/
+
+FROM ${DEBIAN_IMAGE} AS rro
+ARG AAPT2_VERSION=8.13.2-14304508
+ARG AAPT2_SHA256=839609d6d776d6dd60a02aa577d97193ce3e650cf1deaabf062321e23bbd6bf6
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip e2fsprogs apksigner && rm -rf /var/lib/apt/lists/*
+WORKDIR /w
+RUN set -eux; \
+    curl -fsSLo aapt2.jar "https://dl.google.com/android/maven2/com/android/tools/build/aapt2/$AAPT2_VERSION/aapt2-$AAPT2_VERSION-linux.jar"; \
+    echo "$AAPT2_SHA256  aapt2.jar" | sha256sum -c -; \
+    unzip -q aapt2.jar aapt2 -d /usr/local/bin; \
+    rm aapt2.jar; \
+    chmod 755 /usr/local/bin/aapt2
+COPY --from=redroid /system/framework/framework-res.apk /in/
+COPY --from=redroid /system/apex/com.android.tethering* /in/tethering/
+COPY build/rro/ /rro/
+RUN set -eux; \
+    keytool -genkeypair -keystore k.jks -storepass holtdroid -keypass holtdroid -alias rro -dname CN=holtdroid-rro -keyalg RSA -validity 36500 >/dev/null; \
+    build() { \
+      aapt2 compile --dir /rro/res -o res.zip; \
+      aapt2 link -o unsigned.apk --manifest "$1" -I /in/framework-res.apk $3 res.zip; \
+      mkdir -p "/out/system/product/overlay/$2"; \
+      apksigner sign --v4-signing-enabled false --ks k.jks --ks-pass pass:holtdroid --out "/out/system/product/overlay/$2/$2.apk" unsigned.apk; \
+      rm res.zip unsigned.apk; \
+    }; \
+    build /rro/android.xml HoltdroidNoEthernet ""; \
+    scr=$(find /in/tethering -path '*/priv-app/ServiceConnectivityResources*/*.apk' | head -1); \
+    if [ -z "$scr" ] && ls /in/tethering/*.apex >/dev/null 2>&1; then \
+      unzip -q /in/tethering/*.apex apex_payload.img; \
+      dir=$(debugfs -R 'ls /priv-app' apex_payload.img 2>/dev/null | tr -s ' ' '\n' | grep '^ServiceConnectivityResources' | head -1); \
+      debugfs -R "dump /priv-app/$dir/ServiceConnectivityResources.apk scr.apk" apex_payload.img; \
+      rm apex_payload.img; scr=scr.apk; \
+    fi; \
+    if [ -n "$scr" ] && aapt2 dump resources "$scr" | grep -q 'string/config_ethernet_iface_regex'; then \
+      aapt2 dump overlayable "$scr" | grep -q 'name="ServiceConnectivityResourcesConfig"'; \
+      build /rro/connectivity.xml HoltdroidNoEthernetConnectivity "-I $scr"; \
+    fi; \
+    find /out -name '*.apk' -exec chmod 644 {} +
 
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS init
 WORKDIR /src
@@ -151,6 +252,10 @@ COPY --from=vendor --chown=0:0 --chmod=600 /out/vendor/build.prop /vendor/build.
 COPY --chown=0:2000 --chmod=755 vendor/bin/redroid.c2.sh /vendor/bin/redroid.c2.sh
 COPY --from=webview --chown=0:0 --chmod=644 /out/webview.apk /system/product/app/webview/webview.apk
 COPY --from=vulkan --chown=0:0 --chmod=644 / /vendor/lib64/hw/
+COPY --from=wifi --chown=0:0 /out/vendor/ /vendor/
+COPY --chown=0:2000 --chmod=755 vendor/bin/holtdroid-wifi.sh /vendor/bin/holtdroid-wifi.sh
+COPY --from=net --chown=0:0 /out/ /vendor/holtdroid-net/
+COPY --from=rro --chown=0:0 /out/system/ /system/
 COPY --from=init /out/holtdroid-redroid-init /holtdroid-redroid-init
 ENTRYPOINT ["/holtdroid-redroid-init"]
 CMD ["qemu=1", "androidboot.hardware=redroid", "androidboot.redroid_gpu_mode=host", "androidboot.use_memfd=true"]

@@ -14,6 +14,9 @@ Dockerfile                        all patches to redroid, as build stages
 cmd/holtdroid-redroid-init/       the entrypoint: cgroup isolation, then exec /init
 build/lpunpack.py                 extracts a partition from an Android super image
 vendor/bin/redroid.c2.sh          replaces redroid's Codec2 switch
+vendor/bin/holtdroid-wifi.sh      simulated Wi-Fi: hwsim radios, router namespace, access point
+vendor/etc/init/holtdroid-wifi.rc its init service (wpa_supplicant's stanza is added from the emulator's)
+build/rro/                        overlay that hides the container's eth0 from Android
 ```
 
 ## Rules

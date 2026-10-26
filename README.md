@@ -89,11 +89,34 @@ What the image changes on top of redroid:
     node. Verified on a k3s node by diffing `sysctl -a` around a boot: only
     `kernel.kptr_restrict` 1→2 remains.
 
+- **A real Wi-Fi** when the host has `mac80211_hwsim` loaded with
+  `radios=0` (Holtdroid decision #105). The Wi-Fi HAL, `libwifi-hal.so`,
+  `wpa_supplicant` (and its init stanza) and `mac80211_create_radios` come
+  from the emulator vendor image of the same system image zip, with the
+  libraries they need that redroid's vendor partition lacks.
+  `vendor/bin/holtdroid-wifi.sh` runs at `post-fs-data`: it creates two
+  radios in the container's network namespace, moves the second into a
+  private router namespace and runs hostapd (open `HoltdroidWifi`) and
+  dnsmasq there, NATing over a veth (`wifiup`) into the container's
+  namespace. A second veth, `eth1`, is a wired uplink through the same
+  router (Holtdroid uses it as mobile data, `mobile0` is its router end,
+  down by default). hostapd and nft are Alpine's with their musl
+  libraries in `/vendor/holtdroid-net`: Android's hostapd is a HAL on
+  14+, and its iptables needs legacy xtables, which mainline kernels may
+  lack. A static overlay sets `config_ethernet_iface_regex` to `eth1`, so
+  Android ignores the container's `eth0` (with Ethernet up it never joins
+  Wi-Fi). Without the module there are no radios and `mobile0` stays up,
+  so Android has `eth1` as plain Ethernet; `vendor.holtdroid.wifi=1` says the Wi-Fi is up and
+  `/data/vendor/wifi/router.pid` holds a process in the router namespace.
+  Radios are scoped to the network namespace that created them and go
+  away with it.
+
 The image is `linux/amd64` only.
 
 ## Running it
 
-The host kernel needs binder (`CONFIG_ANDROID_BINDERFS`); ashmem isn't
+The host kernel needs binder (`CONFIG_ANDROID_BINDERFS`); for Wi-Fi,
+`modprobe mac80211_hwsim radios=0` on the host first. ashmem isn't
 needed (`androidboot.use_memfd=true`, the default arguments). For GPU
 rendering pass the render node:
 

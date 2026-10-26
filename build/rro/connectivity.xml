@@ -1,0 +1,4 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="io.github.holtdroid.overlay.noethernet.connectivity">
+    <overlay android:targetPackage="com.android.connectivity.resources" android:targetName="ServiceConnectivityResourcesConfig" android:isStatic="true" android:priority="100"/>
+    <application android:hasCode="false"/>
+</manifest>
