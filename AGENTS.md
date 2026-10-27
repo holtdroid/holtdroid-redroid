@@ -19,6 +19,7 @@ vendor/bin/holtdroid-wifi.sh      simulated Wi-Fi: hwsim radios, router namespac
 vendor/etc/init/holtdroid-wifi.rc its init service (wpa_supplicant's stanza is added from the emulator's)
 build/rro/                        static overlays: no eth0, Google WebView as a provider, the logo wallpaper, no search bar on the home screen
 build/wallpaper.svg               source of build/rro/wallpaper-res/…/default_wallpaper.png (rsvg-convert)
+build/camera/                     the camera HAL (Android 13-15): hal.cpp, its init rc, VINTF manifest, camera feature, build.sh
 ```
 
 ## Rules

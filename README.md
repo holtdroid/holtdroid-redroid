@@ -95,7 +95,21 @@ What the image changes on top of redroid:
   `handheld_core_hardware.xml`, so system_server starts no Bluetooth service
   ("Bluetooth Hardware Not Present") and apps see a device without
   Bluetooth. The idle HAL stays. Android 11, 12 and 15 keep a working one.
-- **Privileged pods in Kubernetes.** The entrypoint
+- **A camera on Android 13 to 15** (`CAMERA=on` in their
+  `versions/*.env`). `build/camera/hal.cpp` is an AIDL camera provider
+  (`ICameraProvider/holtdroid/0`, V1) built with the NDK against the image's
+  own `libbinder_ndk`, `libnativewindow` and `liblog`, with the AIDL stubs
+  generated from AOSP's frozen interfaces and AOSP's `camera_metadata`
+  compiled in. It offers one LIMITED back camera (sensor at 90°) with YUV and
+  JPEG streams up to 1920×1080, written by the CPU, so no GPU path is
+  involved. It is lazy: it starts once at boot so cameraserver finds it,
+  exits a few seconds after the camera closes (`ro.camera.enableLazyHal`)
+  and init starts it again on the next open. Its frames come from
+  Holtdroid's agent on the abstract socket `@holtdroid-camera`, which the
+  Pod's containers share; Android's eBPF firewall refuses TCP from the
+  cameraserver uid. Without the agent it shows color bars. Android 11 and
+  12 only take HIDL camera providers and have no camera.
+
   `/holtdroid-redroid-init` runs before Android's `/init`:
   - it moves itself into a child cgroup, unshares the cgroup namespace and
     remounts `/sys/fs/cgroup`. Without it Android's init can't create

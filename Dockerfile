@@ -9,6 +9,7 @@
 ARG REDROID_IMAGE
 ARG VULKAN=stock
 ARG BLUETOOTH=on
+ARG CAMERA=off
 ARG GO_IMAGE=docker.io/library/golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61
 ARG ALPINE_IMAGE=docker.io/library/alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
 ARG DEBIAN_IMAGE=docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
@@ -66,6 +67,59 @@ FROM scratch AS vulkan-stock
 COPY --from=redroid /vendor/lib64/hw/vulkan.radeon.so /vendor/lib64/hw/vulkan.intel.so /
 
 FROM vulkan-${VULKAN} AS vulkan
+
+FROM ${DEBIAN_IMAGE} AS camera-build
+ARG NDK=r28c
+ARG NDK_SHA1=a7b54a5de87fecd125a17d54f73c446199e72a64
+ARG BUILD_TOOLS_ZIP=build-tools_r35_linux.zip
+ARG BUILD_TOOLS_SHA256=bd3a4966912eb8b30ed0d00b0cda6b6543b949d5ffe00bea54c04c81e1561d88
+ARG AOSP_TAG=android-15.0.0_r1
+ARG INTERFACES_COMMIT=488942f82bd1bc9ad1cb65a02c71421dc3a6a3d6
+ARG MEDIA_COMMIT=0287f16fc74c607c04a9570ee3ae914e1285cd2c
+ARG NATIVE_COMMIT=f7274fca5e36082674740bc6c976f73c4578d009
+ARG CORE_COMMIT=fc7bc8c4bfb4c6095e34ea784509dae56f25b486
+ARG STB_COMMIT=003501f6d7a8668ce8b6d875e34dd97ad0d5d5b5
+ARG STB_SHA256=cbd5f0ad7a9cf4468affb36354a1d2338034f2c12473cf1a8e32053cb6914a05
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip git && rm -rf /var/lib/apt/lists/*
+WORKDIR /w
+RUN set -eux; \
+    curl -fsSLo ndk.zip "https://dl.google.com/android/repository/android-ndk-$NDK-linux.zip"; \
+    echo "$NDK_SHA1  ndk.zip" | sha1sum -c -; \
+    unzip -q ndk.zip; mv "android-ndk-$NDK" ndk; rm ndk.zip; \
+    curl -fsSLo bt.zip "https://dl.google.com/android/repository/$BUILD_TOOLS_ZIP"; \
+    echo "$BUILD_TOOLS_SHA256  bt.zip" | sha256sum -c -; \
+    unzip -q bt.zip 'android-15/aidl' 'android-15/lib64/*'; mv android-15 build-tools; rm bt.zip; \
+    git clone -q --depth 1 --filter=blob:none --sparse --branch "$AOSP_TAG" https://android.googlesource.com/platform/hardware/interfaces hardware-interfaces; \
+    test "$(git -C hardware-interfaces rev-parse HEAD)" = "$INTERFACES_COMMIT"; \
+    git -C hardware-interfaces sparse-checkout set camera/provider/aidl camera/device/aidl camera/common/aidl camera/metadata/aidl \
+      graphics/common/aidl common/aidl common/fmq/aidl; \
+    git clone -q --depth 1 --filter=blob:none --sparse --branch "$AOSP_TAG" https://android.googlesource.com/platform/system/media media; \
+    test "$(git -C media rev-parse HEAD)" = "$MEDIA_COMMIT"; \
+    git -C media sparse-checkout set camera private/camera; \
+    git clone -q --depth 1 --filter=blob:none --sparse --branch "$AOSP_TAG" https://android.googlesource.com/platform/frameworks/native native; \
+    test "$(git -C native rev-parse HEAD)" = "$NATIVE_COMMIT"; \
+    git -C native sparse-checkout set libs/binder/ndk/include_cpp libs/binder/ndk/include_platform libs/binder/ndk/include_ndk libs/nativewindow/include; \
+    git clone -q --depth 1 --filter=blob:none --sparse --branch "$AOSP_TAG" https://android.googlesource.com/platform/system/core core; \
+    test "$(git -C core rev-parse HEAD)" = "$CORE_COMMIT"; \
+    git -C core sparse-checkout set libcutils/include/cutils; \
+    mkdir -p src; \
+    curl -fsSLo src/stb_image_write.h "https://raw.githubusercontent.com/nothings/stb/$STB_COMMIT/stb_image_write.h"; \
+    echo "$STB_SHA256  src/stb_image_write.h" | sha256sum -c -
+COPY --from=redroid /system/lib64/libbinder_ndk.so /system/lib64/libnativewindow.so /system/lib64/liblog.so /w/lib/
+COPY build/camera/hal.cpp /w/src/
+COPY build/camera/include/ /w/src/include/
+COPY build/camera/build.sh /w/
+RUN sh /w/build.sh
+
+FROM scratch AS camera-on
+COPY --from=camera-build /out/bin/ /bin/
+COPY build/camera/android.hardware.camera.provider-holtdroid.rc /etc/init/
+COPY build/camera/android.hardware.camera.provider-holtdroid.xml /etc/vintf/manifest/
+COPY build/camera/android.hardware.camera.xml /etc/permissions/
+
+FROM scratch AS camera-off
+
+FROM camera-${CAMERA} AS camera
 
 FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS bluetooth-off-build
 COPY --from=redroid /vendor/etc/permissions/handheld_core_hardware.xml /in/
@@ -226,6 +280,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags=-s -o /out
 FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS vendor
 ARG GRALLOC=cros
 ARG CODEC2=on
+ARG CAMERA=off
 COPY --from=redroid /vendor/bin/gpu_config.sh /vendor/build.prop /in/
 COPY --from=redroid /odm/etc/build.prop /in/odm.prop
 COPY --from=ndk /ndk_translation.prop /in/
@@ -247,7 +302,8 @@ RUN set -eux; \
     ! grep -E '^ro.odm.product.cpu.abilist(32)?=.*armeabi' /out/odm/etc/build.prop; \
     cat /in/ndk_translation.prop >> /out/vendor/build.prop; \
     if [ "$CODEC2" = on ] && ! grep -qx 'ro.boot.use_redroid_c2=1' /out/vendor/build.prop; then echo 'ro.boot.use_redroid_c2=1' >> /out/vendor/build.prop; fi; \
-    echo 'service.adb.root=1' >> /out/vendor/build.prop
+    echo 'service.adb.root=1' >> /out/vendor/build.prop; \
+    [ "$CAMERA" != on ] || echo 'ro.camera.enableLazyHal=true' >> /out/vendor/build.prop
 
 FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS rc
 COPY --from=redroid /system/etc/init/hw/init.rc /vendor/etc/init/redroid.common.rc /in/
@@ -284,6 +340,7 @@ COPY --chown=0:0 --chmod=644 vendor/etc/init/holtdroid-c2.rc /vendor/etc/init/ho
 COPY --from=webview --chown=0:0 --chmod=644 /out/webview.apk /system/product/app/webview/webview.apk
 COPY --from=vulkan --chown=0:0 --chmod=644 / /vendor/lib64/hw/
 COPY --from=bluetooth --chown=0:0 --chmod=644 / /vendor/etc/permissions/
+COPY --from=camera --chown=0:0 / /vendor/
 COPY --from=wifi --chown=0:0 /out/vendor/ /vendor/
 COPY --chown=0:2000 --chmod=755 vendor/bin/holtdroid-wifi.sh /vendor/bin/holtdroid-wifi.sh
 COPY --from=net --chown=0:0 /out/ /vendor/holtdroid-net/

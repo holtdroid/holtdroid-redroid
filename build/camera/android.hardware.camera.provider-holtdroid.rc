@@ -1,0 +1,6 @@
+service vendor.camera-provider-holtdroid /vendor/bin/hw/android.hardware.camera.provider-holtdroid
+    interface aidl android.hardware.camera.provider.ICameraProvider/holtdroid/0
+    class hal
+    user cameraserver
+    group audio camera input drmrpc inet
+    oneshot
