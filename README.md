@@ -102,9 +102,13 @@ What the image changes on top of redroid:
   generated from AOSP's frozen interfaces and AOSP's `camera_metadata`
   compiled in. It offers one LIMITED back camera (sensor at 90°) with YUV and
   JPEG streams up to 1920×1080, written by the CPU, so no GPU path is
-  involved. It is lazy: it starts once at boot so cameraserver finds it,
-  exits a few seconds after the camera closes (`ro.camera.enableLazyHal`)
-  and init starts it again on the next open. Its frames come from
+  involved. On Android 15 it is lazy (`CAMERA_LAZY=on`): it starts once at
+  boot so cameraserver finds it, exits a few seconds after the camera closes
+  (`ro.camera.enableLazyHal`) and init starts it again on the next open.
+  Android 13 and 14's cameraserver dereferences a null provider in
+  `AidlProviderInfo::startProviderInterface` when a lazy one isn't running
+  (on `dumpsys media.camera` and on opening the camera), so there the HAL
+  stays up, idle, with no CPU use until an app opens the camera. Its frames come from
   Holtdroid's agent on the abstract socket `@holtdroid-camera`, which the
   Pod's containers share; Android's eBPF firewall refuses TCP from the
   cameraserver uid. Without the agent it shows color bars. Android 11 and

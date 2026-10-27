@@ -281,6 +281,7 @@ FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS vendor
 ARG GRALLOC=cros
 ARG CODEC2=on
 ARG CAMERA=off
+ARG CAMERA_LAZY=off
 COPY --from=redroid /vendor/bin/gpu_config.sh /vendor/build.prop /in/
 COPY --from=redroid /odm/etc/build.prop /in/odm.prop
 COPY --from=ndk /ndk_translation.prop /in/
@@ -303,7 +304,7 @@ RUN set -eux; \
     cat /in/ndk_translation.prop >> /out/vendor/build.prop; \
     if [ "$CODEC2" = on ] && ! grep -qx 'ro.boot.use_redroid_c2=1' /out/vendor/build.prop; then echo 'ro.boot.use_redroid_c2=1' >> /out/vendor/build.prop; fi; \
     echo 'service.adb.root=1' >> /out/vendor/build.prop; \
-    [ "$CAMERA" != on ] || echo 'ro.camera.enableLazyHal=true' >> /out/vendor/build.prop
+    [ "$CAMERA" != on ] || [ "$CAMERA_LAZY" != on ] || echo 'ro.camera.enableLazyHal=true' >> /out/vendor/build.prop
 
 FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS rc
 COPY --from=redroid /system/etc/init/hw/init.rc /vendor/etc/init/redroid.common.rc /in/
