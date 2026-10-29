@@ -14,6 +14,7 @@ sessions, one image per Android version:
 
 | Tag | redroid base | ARM64 translation from |
 |-----|--------------|------------------------|
+| `16` | `redroid/redroid:16.0.0-latest` | emulator image `x86_64-36_r07` (`libndk_translation` + berberis) |
 | `15` | `redroid/redroid:15.0.0-latest` | emulator image `x86_64-35_r09` (`libndk_translation` + berberis) |
 | `14` | `redroid/redroid:14.0.0-latest` | `x86_64-34_r14` (`libndk_translation`) |
 | `13` | `redroid/redroid:13.0.0-latest` | `x86_64-33_r15` (`libndk_translation`; r16 and later ship no translation) |
@@ -78,8 +79,8 @@ What the image changes on top of redroid:
   `pm uninstall com.android.webview` goes back to the factory one. redroid
   ships it signed with AOSP's test key, which no snapshot matches. The
   APK's contents are unchanged.
-- **Newer Vulkan drivers** (`VULKAN=mesa`, only in `versions/15.env` so
-  far). redroid ships Mesa 24.0.8 built with `android-strict`, which on its
+- **Newer Vulkan drivers** (`VULKAN=mesa`, in `versions/15.env` and
+  `versions/16.env`). redroid ships Mesa 24.0.8 built with `android-strict`, which on its
   API level advertises Vulkan 1.1 and hides `VK_KHR_pipeline_library`,
   `dynamic_rendering`, `synchronization2` and more. Chromium 157 and later
   need them (ANGLE and Skia run on Vulkan, with no GL fallback) and abort
@@ -103,14 +104,14 @@ What the image changes on top of redroid:
   `handheld_core_hardware.xml`, so system_server starts no Bluetooth service
   ("Bluetooth Hardware Not Present") and apps see a device without
   Bluetooth. The idle HAL stays. Android 11, 12 and 15 keep a working one.
-- **A camera on Android 13 to 15** (`CAMERA=on` in their
+- **A camera on Android 13 to 16** (`CAMERA=on` in their
   `versions/*.env`). `build/camera/hal.cpp` is an AIDL camera provider
   (`ICameraProvider/holtdroid/0`, V1) built with the NDK against the image's
   own `libbinder_ndk`, `libnativewindow` and `liblog`, with the AIDL stubs
   generated from AOSP's frozen interfaces and AOSP's `camera_metadata`
   compiled in. It offers one LIMITED back camera (sensor at 90°) with YUV and
   JPEG streams up to 1920×1080, written by the CPU, so no GPU path is
-  involved. On Android 15 it is lazy (`CAMERA_LAZY=on`): it starts once at
+  involved. On Android 15 and 16 it is lazy (`CAMERA_LAZY=on`): it starts once at
   boot so cameraserver finds it, exits a few seconds after the camera closes
   (`ro.camera.enableLazyHal`) and init starts it again on the next open.
   Android 13 and 14's cameraserver dereferences a null provider in
@@ -121,6 +122,35 @@ What the image changes on top of redroid:
   Pod's containers share; Android's eBPF firewall refuses TCP from the
   cameraserver uid. Without the agent it shows color bars. Android 11 and
   12 only take HIDL camera providers and have no camera.
+
+- **Android 16 on a mainline kernel** (`KERNEL_COMPAT=on`, only in
+  `versions/16.env`). Android 16 expects an Android Common Kernel and stops
+  booting on a mainline one in three places; the `kernel-compat` stages
+  patch them in the image and change nothing on the node:
+  - netbpfload accepts only the LTS branches it knows ("Android V+ only
+    supports LTS kernels"), so 6.18 is refused, the network BPF programs
+    aren't loaded and netd aborts. init.rc runs `holtdroid_netbpfload`
+    instead of `bpfloader`: the same service, started with
+    `libholtdroid_uname.so` preloaded, whose `uname()` reports 6.12 when the
+    kernel is newer. Only netbpfload sees it.
+  - netd creates a BPF map when it starts. The node keeps
+    `kernel.unprivileged_bpf_disabled=2`, and the init wrapper hides the
+    sysctl from Android, so creating one needs `CAP_BPF`, which netd's
+    `capabilities` gain.
+  - libcutils uses memfd for ashmem only when the kernel answers ashmem's
+    ioctls on a memfd (an ACK patch) and falls back to `/dev/ashmem`, gone
+    from mainline since 5.18. system_server then aborts ("Failed to create
+    ashmem") and the Codec2 encoders get no buffers.
+    `libholtdroid_ashmem.so` answers those ioctls on memfds the way ACK
+    does (size from `fstat`, `ftruncate`, write protection as
+    `F_SEAL_FUTURE_WRITE`, pinning as a no-op) and passes every other ioctl
+    on. Init exports it as `LD_PRELOAD` by its absolute
+    `/system/lib64` path, which the system and every APEX linker namespace
+    may load; services from `/vendor` load the copy in `/vendor/lib64` by
+    name instead, 32-bit system services the one in `/system/lib`, and init's
+    `exec` of vendor binaries goes through `env` for the same reason. The
+    library removes `LD_PRELOAD` from the environment when it loads, so
+    apps and child processes don't see it.
 
   `/holtdroid-redroid-init` runs before Android's `/init`:
   - it moves itself into a child cgroup, unshares the cgroup namespace and

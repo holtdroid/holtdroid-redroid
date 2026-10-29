@@ -10,6 +10,7 @@ ARG REDROID_IMAGE
 ARG VULKAN=stock
 ARG BLUETOOTH=on
 ARG CAMERA=off
+ARG KERNEL_COMPAT=off
 ARG GO_IMAGE=docker.io/library/golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61
 ARG ALPINE_IMAGE=docker.io/library/alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
 ARG DEBIAN_IMAGE=docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
@@ -329,7 +330,7 @@ RUN set -eux; \
       --out /out/webview.apk /in/webview.apk; \
     apksigner verify --print-certs /out/webview.apk | grep -q 'SHA-256 digest: 32a2fc74d731105859e5a85df16d95f102d85b22099b8064c5d8915c61dad1e0'
 
-FROM ${REDROID_IMAGE}
+FROM ${REDROID_IMAGE} AS assembled
 COPY --from=ndk /out/ /
 COPY --from=rc --chown=0:0 --chmod=644 /out/init.rc /system/etc/init/hw/init.rc
 COPY --from=rc --chown=0:0 --chmod=644 /out/redroid.common.rc /vendor/etc/init/redroid.common.rc
@@ -349,3 +350,36 @@ COPY --from=rro --chown=0:0 /out/system/ /system/
 COPY --from=init /out/holtdroid-redroid-init /holtdroid-redroid-init
 ENTRYPOINT ["/holtdroid-redroid-init"]
 CMD ["qemu=1", "androidboot.hardware=redroid", "androidboot.redroid_gpu_mode=host", "androidboot.use_memfd=true"]
+
+FROM ${DEBIAN_IMAGE} AS kernel-compat-build
+ARG NDK=r28c
+ARG NDK_SHA1=a7b54a5de87fecd125a17d54f73c446199e72a64
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip && rm -rf /var/lib/apt/lists/*
+WORKDIR /w
+RUN set -eux; \
+    curl -fsSLo ndk.zip "https://dl.google.com/android/repository/android-ndk-$NDK-linux.zip"; \
+    echo "$NDK_SHA1  ndk.zip" | sha1sum -c -; \
+    unzip -q ndk.zip; mv "android-ndk-$NDK" ndk; rm ndk.zip
+COPY build/kernel-compat/uname.c build/kernel-compat/ashmem.c build/kernel-compat/build.sh /w/
+RUN sh /w/build.sh
+
+FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS kernel-compat-rc
+COPY --from=assembled /system/etc/init/ /in/system/etc/init/
+COPY --from=assembled /system/system_ext/etc/init/ /in/system/system_ext/etc/init/
+COPY --from=assembled /vendor/etc/init/ /in/vendor/etc/init/
+COPY --from=assembled /system/bin/ /bin-in/bin/
+COPY build/kernel-compat/holtdroid-netbpfload.rc build/kernel-compat/holtdroid-ashmem.rc /in/system/etc/init/
+COPY build/kernel-compat/patch-rc.sh /
+RUN sh /patch-rc.sh
+
+FROM scratch AS kernel-compat-on
+COPY --from=kernel-compat-build /out/ /
+COPY --from=kernel-compat-rc /in/ /
+COPY build/kernel-compat/holtdroid-netbpfload.sh /system/bin/
+
+FROM scratch AS kernel-compat-off
+
+FROM kernel-compat-${KERNEL_COMPAT} AS kernel-compat
+
+FROM assembled
+COPY --from=kernel-compat --chown=0:0 / /
