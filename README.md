@@ -8,14 +8,6 @@
   <a href="https://github.com/holtdroid">All repositories</a>
 </p>
 
-<p align="center">
-  <img src="https://github.com/holtdroid/.github/raw/main/profile/assets/ai-disclaimer.png" alt="Disclaimer: fully AI-generated. Not a single line of code was written or reviewed by a human. Use at your own risk.">
-</p>
-
-> [!CAUTION]
-> **Fully AI-generated.** Not a single line of this project was written or reviewed by a human: all of it was
-> written by Claude through Claude Code. It's a Pandora's box, so use it at your own risk.
-
 [redroid](https://github.com/remote-android/redroid-doc) (Android in a
 container) prepared for [Holtdroid](https://github.com/holtdroid/holtdroid)
 sessions, one image per Android version:
@@ -252,3 +244,13 @@ The build scripts are Apache-2.0. The image contains redroid (Apache-2.0,
 AOSP) and `libndk_translation` from the Android emulator system image,
 which is distributed under the Android Software Development Kit License
 Agreement.
+
+---
+
+<p align="center">
+  <img src="https://github.com/holtdroid/.github/raw/main/profile/assets/ai-disclaimer.png" alt="Disclaimer: fully AI-generated. Not a single line of code was written or reviewed by a human. Use at your own risk.">
+</p>
+
+> [!CAUTION]
+> **Fully AI-generated.** Not a single line of this project was written or reviewed by a human: all of it was
+> written by Claude through Claude Code. It's a Pandora's box, so use it at your own risk.
