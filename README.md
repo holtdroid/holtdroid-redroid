@@ -104,6 +104,16 @@ What the image changes on top of redroid:
   `handheld_core_hardware.xml`, so system_server starts no Bluetooth service
   ("Bluetooth Hardware Not Present") and apps see a device without
   Bluetooth. The idle HAL stays. Android 11, 12 and 15 keep a working one.
+- **The mark-compact GC on Android 14** (`UFFD_GC=on` in
+  `versions/14.env`): the base image sets
+  `ro.dalvik.vm.enable_uffd_gc=false` in the product `build.prop`, so ART
+  uses the concurrent-copying GC, whose heap reservation is twice
+  `dalvik.vm.heapsize`: 1 GiB in each of the two zygotes. Frida 17 looks for
+  zygote's `setArgV0` slot by reading every unnamed `rw-p` mapping in full,
+  heap first (kernels without `CONFIG_ANON_VMA_NAME` leave ART's mappings
+  unnamed), both zygotes at once, so frida-server peaked at 2.2 GiB and the
+  session went over its 3 GiB limit. With the flag flipped to `true`, as on
+  15 and 16, the heap reservation is 512 MiB and the peak about 1 GiB.
 - **A camera on Android 13 to 16** (`CAMERA=on` in their
   `versions/*.env`). `build/camera/hal.cpp` is an AIDL camera provider
   (`ICameraProvider/holtdroid/0`, V1) built with the NDK against the image's

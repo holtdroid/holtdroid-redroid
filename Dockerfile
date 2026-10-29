@@ -11,6 +11,7 @@ ARG VULKAN=stock
 ARG BLUETOOTH=on
 ARG CAMERA=off
 ARG KERNEL_COMPAT=off
+ARG UFFD_GC=stock
 ARG GO_IMAGE=docker.io/library/golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61
 ARG ALPINE_IMAGE=docker.io/library/alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
 ARG DEBIAN_IMAGE=docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
@@ -308,6 +309,21 @@ RUN set -eux; \
     printf 'ro.logd.kernel=false\nro.logd.auditd=false\n' >> /out/vendor/build.prop; \
     [ "$CAMERA" != on ] || [ "$CAMERA_LAZY" != on ] || echo 'ro.camera.enableLazyHal=true' >> /out/vendor/build.prop
 
+FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS uffd-gc-build
+COPY --from=redroid /system/product/etc/build.prop /in/
+RUN set -eux; \
+    mkdir -p /out/system/product/etc; \
+    grep -qx 'ro.dalvik.vm.enable_uffd_gc=false' /in/build.prop; \
+    sed 's/^ro.dalvik.vm.enable_uffd_gc=false$/ro.dalvik.vm.enable_uffd_gc=true/' /in/build.prop > /out/system/product/etc/build.prop; \
+    chmod 644 /out/system/product/etc/build.prop
+
+FROM scratch AS uffd-gc-on
+COPY --from=uffd-gc-build /out/ /
+
+FROM scratch AS uffd-gc-stock
+
+FROM uffd-gc-${UFFD_GC} AS uffd-gc
+
 FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS rc
 COPY --from=redroid /system/etc/init/hw/init.rc /vendor/etc/init/redroid.common.rc /in/
 RUN set -eux; \
@@ -338,6 +354,7 @@ COPY --from=rc --chown=0:0 --chmod=644 /out/redroid.common.rc /vendor/etc/init/r
 COPY --from=vendor --chown=0:2000 --chmod=755 /out/vendor/bin/gpu_config.sh /vendor/bin/gpu_config.sh
 COPY --from=vendor --chown=0:0 --chmod=600 /out/vendor/build.prop /vendor/build.prop
 COPY --from=vendor --chown=0:0 --chmod=600 /out/odm/etc/build.prop /odm/etc/build.prop
+COPY --from=uffd-gc --chown=0:0 / /
 COPY --chown=0:2000 --chmod=755 vendor/bin/redroid.c2.sh /vendor/bin/redroid.c2.sh
 COPY --chown=0:0 --chmod=644 vendor/etc/init/holtdroid-c2.rc /vendor/etc/init/holtdroid-c2.rc
 COPY --from=webview --chown=0:0 --chmod=644 /out/webview.apk /system/product/app/webview/webview.apk
