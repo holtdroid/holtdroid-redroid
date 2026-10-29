@@ -1,4 +1,12 @@
-# holtdroid-redroid
+<p align="center">
+  <a href="https://holtdroid.github.io/holtdroid/configuration/emulator/"><img src="https://github.com/holtdroid/.github/raw/main/profile/assets/social-holtdroid-redroid.png" alt="Redroid images — Android in a container for Holtdroid sessions"></a>
+</p>
+
+<p align="center">
+  Part of <a href="https://github.com/holtdroid/holtdroid"><b>Holtdroid</b></a> ·
+  <a href="https://holtdroid.github.io/holtdroid/configuration/emulator/">Documentation</a> ·
+  <a href="https://github.com/holtdroid">All repositories</a>
+</p>
 
 [redroid](https://github.com/remote-android/redroid-doc) (Android in a
 container) prepared for [Holtdroid](https://github.com/holtdroid/holtdroid)
