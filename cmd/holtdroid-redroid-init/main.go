@@ -18,6 +18,8 @@ const (
 	procSys    = "/proc/sys"
 	procSysNet = "/proc/sys/net"
 	procFlags  = syscall.MS_NOSUID | syscall.MS_NODEV | syscall.MS_NOEXEC
+	// virtualBlock holds the loop devices' queue settings.
+	virtualBlock = "/sys/devices/virtual/block"
 )
 
 // guarded are the node-wide sysctls Android's binaries write (the rc files'
@@ -64,8 +66,16 @@ func main() {
 
 func isolateCgroup() error {
 	own, err := ownCgroup()
-	if err != nil || own == "/" {
+	if err != nil {
 		return err
+	}
+	if own == "/" {
+		if err := writableBlockQueues(); err != nil {
+			return err
+		}
+		if err := mountCgroup(); err != nil {
+			return err
+		}
 	}
 	child := filepath.Join(cgroupRoot, own, "android")
 	if err := os.Mkdir(child, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
@@ -77,6 +87,32 @@ func isolateCgroup() error {
 	if err := syscall.Unshare(syscall.CLONE_NEWCGROUP); err != nil {
 		return fmt.Errorf("unshare cgroup namespace: %w", err)
 	}
+	return mountCgroup()
+}
+
+// writableBlockQueues lets apexd tune its loop devices' queues in an
+// unprivileged container: sysfs's superblock becomes writable, /sys itself
+// stays a read-only mount and only a bind of the virtual block devices is
+// writable.
+func writableBlockQueues() error {
+	steps := []struct {
+		target string
+		flags  uintptr
+	}{
+		{virtualBlock, syscall.MS_BIND},
+		{"/sys", syscall.MS_REMOUNT | procFlags},
+		{"/sys", syscall.MS_BIND | syscall.MS_REMOUNT | syscall.MS_RDONLY | procFlags},
+		{virtualBlock, syscall.MS_BIND | syscall.MS_REMOUNT | procFlags},
+	}
+	for _, s := range steps {
+		if err := syscall.Mount(s.target, s.target, "", s.flags, ""); err != nil {
+			return fmt.Errorf("mount %s (flags %#x): %w", s.target, s.flags, err)
+		}
+	}
+	return nil
+}
+
+func mountCgroup() error {
 	if err := syscall.Unmount(cgroupRoot, syscall.MNT_DETACH); err != nil {
 		return fmt.Errorf("unmount %s: %w", cgroupRoot, err)
 	}

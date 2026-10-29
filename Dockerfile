@@ -305,6 +305,7 @@ RUN set -eux; \
     cat /in/ndk_translation.prop >> /out/vendor/build.prop; \
     if [ "$CODEC2" = on ] && ! grep -qx 'ro.boot.use_redroid_c2=1' /out/vendor/build.prop; then echo 'ro.boot.use_redroid_c2=1' >> /out/vendor/build.prop; fi; \
     echo 'service.adb.root=1' >> /out/vendor/build.prop; \
+    printf 'ro.logd.kernel=false\nro.logd.auditd=false\n' >> /out/vendor/build.prop; \
     [ "$CAMERA" != on ] || [ "$CAMERA_LAZY" != on ] || echo 'ro.camera.enableLazyHal=true' >> /out/vendor/build.prop
 
 FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS rc
@@ -381,5 +382,14 @@ FROM scratch AS kernel-compat-off
 
 FROM kernel-compat-${KERNEL_COMPAT} AS kernel-compat
 
-FROM assembled
+FROM assembled AS compat
 COPY --from=kernel-compat --chown=0:0 / /
+
+FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS caps
+COPY --from=compat /system/etc/init/ /in/system/etc/init/
+COPY --from=compat /vendor/etc/init/ /in/vendor/etc/init/
+COPY build/caps/strip-caps.sh /
+RUN mkdir /out && sh /strip-caps.sh
+
+FROM compat
+COPY --from=caps --chown=0:0 /out/ /

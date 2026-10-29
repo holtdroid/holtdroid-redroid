@@ -156,8 +156,12 @@ What the image changes on top of redroid:
   - it moves itself into a child cgroup, unshares the cgroup namespace and
     remounts `/sys/fs/cgroup`. Without it Android's init can't create
     process groups and netd can't attach its BPF programs next to systemd's.
-    Without a host cgroup namespace (plain `docker run`) this step does
-    nothing;
+    In a container with its own cgroup namespace (an unprivileged Pod, or
+    plain `docker run`) it first mounts a fresh, writable cgroup2 there,
+    since the runtime's is read-only, and makes `/sys/devices/virtual/block`
+    writable under a read-only `/sys` (sysfs's superblock becomes writable,
+    `/sys` itself stays a read-only mount), because APEX activation fails
+    unless it can set its loop devices' queue settings;
   - it keeps Android off the node's sysctls. A privileged container writes
     straight into the host's `/proc/sys`, and Android's init.rc disables
     `kernel.modprobe` and `kernel.sysrq`, lowers `vm.mmap_min_addr`, retunes
@@ -177,6 +181,15 @@ What the image changes on top of redroid:
     node. Verified on a k3s node by diffing `sysctl -a` around a boot: only
     `kernel.kptr_restrict` 1→2 remains.
 
+- **Init services fit an unprivileged container**: the `caps` stage keeps
+  in every `capabilities` line of `/system/etc/init` and `/vendor/etc/init`
+  only the capabilities Holtdroid's unprivileged Android container has
+  (`build/caps/strip-caps.sh`, the same list as Holtdroid's provider), since
+  init refuses to start a service whose capabilities are outside the
+  bounding set: logd asked for `SYSLOG` and `AUDIT_CONTROL`, the Wi-Fi HAL
+  for `SYS_MODULE`, uprobestats for `PERFMON`. logd also raises those two
+  itself unless `ro.logd.kernel` and `ro.logd.auditd` are off, which the
+  vendor properties now say, so logcat has no kernel or audit lines.
 - **A real Wi-Fi** when the host has `mac80211_hwsim` loaded with
   `radios=0` (Holtdroid decision #105). The Wi-Fi HAL, `libwifi-hal.so`,
   `wpa_supplicant` (and its init stanza) and `mac80211_create_radios` come
@@ -224,10 +237,14 @@ docker run -d --privileged -p 5555:5555 ghcr.io/holtdroid/holtdroid-redroid:15 \
 
 In Kubernetes (containerd) the Pod also needs
 `securityContext.supplementalGroupsPolicy: Strict` and the container
-`runAsUser: 0`, `runAsGroup: 0` and `privileged: true`: Android's `/etc` is
-an absolute symlink, which containerd refuses to resolve when it adds
-supplemental groups from `/etc/group`. Mount an `emptyDir` (or a volume) on
-`/data`.
+`runAsUser: 0` and `runAsGroup: 0`: Android's `/etc` is an absolute symlink,
+which containerd refuses to resolve when it adds supplemental groups from
+`/etc/group`. Mount an `emptyDir` (or a volume) on `/data`. The container
+runs either `privileged: true` or, as Holtdroid does (its decision #173),
+with the capabilities in `build/caps/strip-caps.sh` only, seccomp
+`RuntimeDefault` and devices handed in by Holtdroid's `session-devices` NRI
+plugin: binder (any minor), `/dev/loop-control` and loop devices, FUSE,
+TUN, the render node, and `/dev/kmsg` as `/dev/null`.
 
 ## Known limits
 

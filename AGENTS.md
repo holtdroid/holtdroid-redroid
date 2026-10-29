@@ -21,6 +21,7 @@ build/rro/                        static overlays: no eth0, Google WebView as a 
 build/wallpaper.svg               source of build/rro/wallpaper-res/…/default_wallpaper.png (rsvg-convert)
 build/camera/                     the camera HAL (Android 13-16): hal.cpp, its init rc, VINTF manifest, camera feature, build.sh
 build/kernel-compat/              Android 16 on a mainline kernel: uname and ashmem shims, netbpfload service, rc patching
+build/caps/strip-caps.sh          trims init services' capabilities to the unprivileged container's set
 ```
 
 ## Rules
